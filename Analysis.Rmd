@@ -75,11 +75,10 @@ production_crops <- readRDS(paste0(inp.folder,data.fao.code,"_all_data.rds")) %>
 ```
 
 
-
-```{r trending,warning=FALSE}
+```{r trending,warning=FALSE,include=FALSE}
 
 # ---- parameters ------
-f = 0.9   # This is the lowess smoothing parameter
+f = 0.9   # This is the loess smoothing parameter
 
 # ---- descriptors ------
 det.methods <- c("Linear regression",
@@ -114,7 +113,8 @@ gendata <- function(country)
 resultstable <- rbind(production_crops,
                       do.call(rbind,
                               lapply(countries, function(x) gendata(x)))) %>%
-  mutate(type = factor(type,levels = c("FAO data",det.methods))) %>% drop_na()
+  mutate(type = factor(type,levels = c("FAO data",det.methods)),
+         value = value/10000) %>% drop_na()
 
 
 # This creates the RMSE for all models and countries
@@ -126,13 +126,12 @@ RMSEtable <- data.frame(do.call(rbind,lapply(countries, function(x)
 colnames(RMSEtable) <- det.methods
 
 
-kable(RMSEtable)
 
 ```
 
 
 
-```{r detrending,warnings=FALSE}
+```{r detrending,warnings=FALSE,include=FALSE}
 
 # This creates the de-trended lines for all models, 
 # for additive and multiplicative decomposition methods
@@ -140,19 +139,16 @@ kable(RMSEtable)
 detrended.tab <- resultstable %>%
   filter(type%in% c("FAO data",det.methods[2])) %>%
   pivot_wider(names_from = type,values_from=value) %>%
-  mutate(Multiplicative = `2-order polynomial`*1000000/`FAO data`,
+  mutate(Multiplicative = `2-order polynomial`*100/`FAO data`,
          Additive = `2-order polynomial`-`FAO data`) %>%
   pivot_longer(`FAO data`:Additive, names_to = "type",values_to="value") %>%
-  mutate(value = value/10000,
-         type = factor(type,levels = c("FAO data", det.methods[2],
+  mutate(type = factor(type,levels = c("FAO data", det.methods[2],
                                        "Additive","Multiplicative"),
                        labels = c("FAO data", "2-order polynomial", 
                                   "De-trended - add.","De-trended - mult.")))
 
 
 ```
-
-
 
 ```{r plotting,warnings=FALSE}
 
@@ -184,5 +180,7 @@ fig2 <- ggline(detrended.tab ,
                size = 1.0) + theme_fivethirtyeight()
 
 plot(fig2)
+
+kable(RMSEtable)
 
 ```
