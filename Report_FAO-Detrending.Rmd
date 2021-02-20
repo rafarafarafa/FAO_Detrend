@@ -1,0 +1,236 @@
+---
+title: false
+fig_caption: yes
+output:
+  pdf_document: null
+keep_tex: yes
+html_document:
+  df_print: paged
+toc: false
+word_document: default
+---
+
+
+```{r setup0, include=FALSE}
+
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=80),
+                      tidy=FALSE)
+```
+
+
+```{r setup1,  results='hide',message=FALSE,warning=FALSE,include=FALSE}
+# --- ----- --- ----- --- ----- --- ----- --- ----- ---
+# Basic code setup
+# --- ----- --- ----- --- ----- --- ----- --- ----- ---
+
+# Load necessary packages
+
+Packages <- c("dplyr","tidyverse","FAOSTAT","smooth",
+              "abind","stringr","Metrics",
+              "RColorBrewer","ggthemes","ggplot2",
+              "ggpubr","wesanderson","kableExtra")
+
+lapply(Packages, library, character.only = TRUE)
+
+
+
+```
+
+
+```{r inputdata,warming = FALSE,include=FALSE}
+
+# --- ----- --- ----- --- ----- --- ----- --- ----- ---
+# Read and pre-process data
+# --- ----- --- ----- --- ----- --- ----- --- ----- ---
+
+inp.folder <- "Data/"
+
+data.fao.code <- "QC" # FAO Dataset code for crop production data
+
+countries <- c("Morocco","United States of America","Germany")
+count.code <- c(143,231,79) #codes of the three countries in the FAO dataset
+
+
+#------------------------------------
+# The next two lines download and save data from FAO.
+# If the data are already downloaded, comment these lines
+
+#data.fao.bulk <- get_faostat_bulk(data.fao.code,inp.folder)
+#saveRDS(data.fao.bulk, paste0(inp.folder,data.fao.code,"_all_data.rds"))
+#------------------------------------
+
+# Read data saved in folder, pre-process
+production_crops <- readRDS(paste0(inp.folder,data.fao.code,"_all_data.rds")) %>%
+  filter(area_code %in% count.code,
+         element == "Yield",
+         item == "Wheat") %>%
+  dplyr::select(area,year,value) %>%
+  mutate(type = "FAO data")
+
+
+
+```
+
+
+```{r trending,warning=FALSE,include=FALSE}
+
+# ---- parameters ------
+f = 0.9   # This is the loess smoothing parameter
+
+# ---- descriptors ------
+det.methods <- c("Linear regression",
+                 "2-order polynomial",
+                 paste0("Loess f=",f))
+dec.models <- c("additive","multiplicative")
+
+time.frame <- data.frame(year = sort(unique(production_crops$year)))
+
+# This function uses three different models to fit trend 
+
+gendata <- function(country) 
+{
+  countrydata <- production_crops[which(production_crops$area == country),]
+  
+  model.lr <- lm(value ~ year, data = countrydata)
+  model.pr <- lm(value ~ poly(year,2), data = countrydata)
+  model.ql <- loess(value ~ poly(year,2),span = f, countrydata)
+  
+  models <- list(model.lr,model.pr,model.ql)
+  resultstable <- do.call(rbind,lapply(1:length(models), function(x)
+    data.frame(area = country,
+               year = time.frame,
+               value = models[[x]] %>% predict(time.frame) %>% as.vector,
+               type = det.methods[[x]])))
+  return(resultstable)
+}
+
+# This runs the function above for all countries in list, creates table
+# with results
+
+resultstable <- rbind(production_crops,
+                      do.call(rbind,
+                              lapply(countries, function(x) gendata(x)))) %>%
+  mutate(type = factor(type,levels = c("FAO data",det.methods))) %>% drop_na()
+
+
+# This creates the RMSE for all models and countries
+RMSEtable <- data.frame(do.call(rbind,lapply(countries, function(x)
+  unlist(lapply(det.methods, function(y)
+    rmse(resultstable %>% filter(area == x, type == y) %>% .$value,
+         resultstable %>%filter(area == x, type == "FAO data") %>% .$value))))),
+  row.names = countries)
+colnames(RMSEtable) <- det.methods
+
+
+
+```
+
+
+
+```{r detrending,warnings=FALSE,include=FALSE}
+
+# This creates the de-trended lines for all models, 
+# for additive and multiplicative decomposition methods
+
+detrended.tab <- resultstable %>%
+  filter(type%in% c("FAO data",det.methods[2])) %>%
+  pivot_wider(names_from = type,values_from=value) %>%
+  mutate(Multiplicative = `2-order polynomial`*1000000/`FAO data`,
+         Additive = `2-order polynomial`-`FAO data`) %>%
+  pivot_longer(`FAO data`:Additive, names_to = "type",values_to="value") %>%
+  mutate(value = value/10000,
+         type = factor(type,levels = c("FAO data", det.methods[2],
+                                       "Additive","Multiplicative"),
+                       labels = c("FAO data", "2-order polynomial", 
+                                  "De-trended - add.","De-trended - mult.")))
+
+
+```
+
+# Detrending of FAO wheat yield data
+
+Rafaela Flach, February 20, 2021
+
+## Introduction
+
+
+For this analysis I downloaded, pre-processed and detrended FAO data on wheat yields for Marocco, United States and Germany for the period with available data, between 1960 and 2019.
+
+First I used three different detrending methods for removing the long-term trends in wheat yields: a simple linear regression model, a second order polynomial regression model, and a locally weighed regression model (loess). There is a large variety of other methods that could be included here, such as spline or moving average detrending approaches, but due to time constraints I limited to the testing of three models.
+
+The chosen model was the one that presented the lowest root mean square error (RMSE). For detrending the time series, I used both additive and multiplicative decomposition approaches.
+
+
+## Results
+
+Figure 2 and Table 1 (supporting information) show the results for different trend models, and the RMSE for each model and country analyzed. The loess model showed the poorest results, and the model with the best fit and chosen for detrending was the second order polynomial model.
+
+Figure 1 shows the decomposition analysis for the FAO wheat yield data for the three countries.  
+
+```{r plotting,warnings=FALSE,include=FALSE}
+
+
+fig1 <- ggline(resultstable,
+               x = "year",
+               y = "value",
+               color = "type",
+               plot_type = "l",
+               facet.by = "area",
+               nrow=3,
+               scales = "free",
+               size = 1.0,
+               linetype = "type",
+               xlab = "Year",
+               ylab = "Yield (ton/ha)") +
+  theme_fivethirtyeight() +
+  color_palette(c("#000000",wes_palette("Darjeeling1",3))) +
+  theme(legend.title = element_blank(), legend.position = "botton")
+
+
+fig2 <- ggline(detrended.tab ,
+               x = "year",
+               y = "value",
+               plot_type = "l",
+               facet.by = c("type","area"),
+               scales = "free",
+               size = 0.8) + 
+  theme_fivethirtyeight() + 
+  theme(panel.spacing = unit(0.5, "lines")) +
+  theme(strip.text.y.right = element_text(angle = 0))
+
+
+kable(RMSEtable)
+
+
+```
+
+```{r Figmain,echo=FALSE, fig.cap = "Decomposition analysis of the wheat yield trends in the United States of America (right), Marocco (center) and Germany (left). First row shows the raw FAO data (ton/ha), second row shows the trend estimated by second order polynomial fit, the third row shows the detrended time series by additive decomposition (ton/ha), and the fourth row shows the detrended time series by multiplicative decomposition (%).",fig.height = 4,fig.width=8}
+
+plot(fig2)
+
+```
+
+
+\pagebreak
+
+## Supporting information
+
+```{r Figsup,echo=FALSE, fig.cap = "Time series of wheat yield data from FAO (ton/ha), and three trend simulation models compared: linear regression model, second order polynomial, and locally weighte dregression model (LOESS) for the United States of America (top), Marocco (center) and Germany (bottom).",fig.height = 6,fig.width=5}
+
+plot(fig1)
+
+```
+
+
+
+
+\pagebreak
+
+
+
+
+```{r Table,echo=FALSE}
+
+kable(RMSEtable, caption = "RMSE results for the three countries analyzed, for the three different detrending approaches.")
+
+```
