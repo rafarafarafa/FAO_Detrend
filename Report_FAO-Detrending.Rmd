@@ -110,7 +110,8 @@ gendata <- function(country)
 resultstable <- rbind(production_crops,
                       do.call(rbind,
                               lapply(countries, function(x) gendata(x)))) %>%
-  mutate(type = factor(type,levels = c("FAO data",det.methods))) %>% drop_na()
+  mutate(type = factor(type,levels = c("FAO data",det.methods)),
+         value = value/10000) %>% drop_na()
 
 
 # This creates the RMSE for all models and countries
@@ -135,11 +136,10 @@ colnames(RMSEtable) <- det.methods
 detrended.tab <- resultstable %>%
   filter(type%in% c("FAO data",det.methods[2])) %>%
   pivot_wider(names_from = type,values_from=value) %>%
-  mutate(Multiplicative = `2-order polynomial`*1000000/`FAO data`,
+  mutate(Multiplicative = `2-order polynomial`*100/`FAO data`,
          Additive = `2-order polynomial`-`FAO data`) %>%
   pivot_longer(`FAO data`:Additive, names_to = "type",values_to="value") %>%
-  mutate(value = value/10000,
-         type = factor(type,levels = c("FAO data", det.methods[2],
+  mutate(type = factor(type,levels = c("FAO data", det.methods[2],
                                        "Additive","Multiplicative"),
                        labels = c("FAO data", "2-order polynomial", 
                                   "De-trended - add.","De-trended - mult.")))
@@ -231,6 +231,6 @@ plot(fig1)
 
 ```{r Table,echo=FALSE}
 
-kable(RMSEtable, caption = "RMSE results for the three countries analyzed, for the three different detrending approaches.")
+kable(RMSEtable, caption = "RMSE results for the three countries analyzed, for the three different detrending approaches (ton/ha).")
 
 ```
