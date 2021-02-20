@@ -75,7 +75,7 @@ production_crops <- readRDS(paste0(inp.folder,data.fao.code,"_all_data.rds")) %>
 ```
 
 
-```{r trending,warning=FALSE,include=FALSE}
+```{r trending,warning=FALSE}
 
 # ---- parameters ------
 f = 0.9   # This is the loess smoothing parameter
@@ -131,7 +131,7 @@ colnames(RMSEtable) <- det.methods
 
 
 
-```{r detrending,warnings=FALSE,include=FALSE}
+```{r detrending,warnings=FALSE}
 
 # This creates the de-trended lines for all models, 
 # for additive and multiplicative decomposition methods
